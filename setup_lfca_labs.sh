@@ -24,9 +24,33 @@ sysadmin_fundamentals() {
 
 cloud_fundamentals() {
   echo "[*] Cloud Fundamentals lab"
-  apt-get -y install docker.io docker-compose
-  git clone https://github.com/localstack/localstack.git /opt/localstack
-  cd /opt/localstack && make infra
+
+  # Install Docker & the Compose CLI plug‑in (Ubuntu 22.04)
+  apt-get update
+  apt-get -y install docker.io docker-compose-plugin
+
+  # Create a lightweight LocalStack lab
+  mkdir -p /opt/localstack-lab && cd /opt/localstack-lab
+
+  cat <<'EOF' > docker-compose.yml
+version: "3.3"
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566"   # main edge‑port
+      - "4571:4571"   # S3 static website
+    environment:
+      - SERVICES=s3,lambda,cloudwatch,iam,dynamodb
+      - DEBUG=1
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+EOF
+
+  # Launch in the background
+  docker compose up -d
+  echo "LocalStack is starting on ports 4566/4571..."
 }
 
 security_fundamentals() {
