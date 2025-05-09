@@ -25,11 +25,43 @@ sysadmin_fundamentals() {
 cloud_fundamentals() {
   echo "[*] Cloud Fundamentals lab"
 
-  # Install Docker & the Compose CLI plug‑in (Ubuntu 22.04)
+  # 1. Make sure basic Docker engine is present
   apt-get update
-  apt-get -y install docker.io docker-compose-plugin
+  apt-get -y install docker.io curl gnupg lsb-release
 
-  # Create a lightweight LocalStack lab
+  # 2. Try to install the v2 compose plugin from Ubuntu (requires 'universe')
+  add-apt-repository -y universe          # no‑op if already enabled
+  apt-get update
+  if ! apt-get -y install docker-compose-plugin; then
+      echo "[*] Ubuntu package not found; switching to Docker’s official repo"
+
+      # 3. Add Docker’s official APT repository
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+           | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+      echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+        https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+        > /etc/apt/sources.list.d/docker.list
+      apt-get update
+      apt-get -y install docker-ce-plugin docker-compose-plugin || true
+  fi
+
+  # 4. Final fallback: standalone docker‑compose binary
+  if ! command -v docker compose &>/dev/null; then
+      echo "[*] Installing standalone docker‑compose"
+      COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest \
+                         | grep -m1 '"tag_name":' | cut -d '"' -f 4)
+      curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
+           -o /usr/local/bin/docker-compose
+      chmod +x /usr/local/bin/docker-compose
+      ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+  fi
+
+  # 5. Enable & start Docker
+  systemctl enable --now docker
+
+  # 6. Build a minimal LocalStack lab
   mkdir -p /opt/localstack-lab && cd /opt/localstack-lab
 
   cat <<'EOF' > docker-compose.yml
@@ -39,8 +71,8 @@ services:
     image: localstack/localstack:latest
     container_name: localstack
     ports:
-      - "4566:4566"   # main edge‑port
-      - "4571:4571"   # S3 static website
+      - "4566:4566"
+      - "4571:4571"
     environment:
       - SERVICES=s3,lambda,cloudwatch,iam,dynamodb
       - DEBUG=1
@@ -48,9 +80,14 @@ services:
       - "/var/run/docker.sock:/var/run/docker.sock"
 EOF
 
-  # Launch in the background
-  docker compose up -d
-  echo "LocalStack is starting on ports 4566/4571..."
+  # Use whichever Compose command is available
+  if command -v docker compose &>/dev/null; then
+      docker compose up -d
+  else
+      docker-compose up -d
+  fi
+
+  echo "✅  LocalStack is coming up on ports 4566/4571"
 }
 
 security_fundamentals() {
